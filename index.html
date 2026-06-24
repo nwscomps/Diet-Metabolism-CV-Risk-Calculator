@@ -135,6 +135,7 @@ let Risk = 0;
 
 // NEW: carbohydrate exposure memory
 let CarbExp = R;
+let GlyLoad = 0;
 
 let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
 
@@ -148,13 +149,38 @@ for(let t=0;t<24;t++){
 CarbExp = 0.9 * CarbExp + 0.1 * R;
 
 // =======================
+// POSTPRANDIAL GLUCOSE
+// =======================
+
+let G = 90 + 80 * CarbExp;
+
+// =======================
+// CHRONIC GLYCEMIC LOAD
+// =======================
+
+const G0 = 120;
+
+let excess = Math.max(0, G - G0);
+let deficit = Math.max(0, G0 - G);
+
+GlyLoad =
+GlyLoad
++ 0.005 * excess
+- 0.002 * deficit;
+
+GlyLoad = Math.max(0, GlyLoad);
+
+// =======================
 // INSULIN RESISTANCE
 // =======================
+
 IR =
-IR
-+ 0.020 * BMI * CarbExp
+0.20
++ 0.015 * BMI * GlyLoad
 + 0.010 * V
 - 0.015 * document.getElementById("act").value;
+
+IR = Math.max(0.05, IR);
 
 // =======================
 // VLDL
