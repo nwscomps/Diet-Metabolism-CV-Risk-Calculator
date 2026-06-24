@@ -135,8 +135,13 @@ let ALC = +document.getElementById("alc").value;
 
 let BMI = +document.getElementById("bmi0").value;
 
-let IR=0.2, V=1, TG=1, HDL=1.2, C=0, Risk=0;
+// stati iniziali
+let IR = 0.2, V = 1, TG = 1, HDL = 1.2, C = 0, Risk = 0;
 
+let prev_IIML_effect = 1;
+let IIML_baseline = null;
+
+// arrays
 let bmiArr=[], tgArr=[], hdlArr=[], iimlArr=[], riskArr=[], metArr=[];
 
 let rows="";
@@ -148,30 +153,49 @@ let noise = (1-CONS)*0.05*Math.random();
 let R_t = R + 0.08*SUG + noise;
 let Cal_t = Cal + SURP - 0.12*ACT + 0.03*ALC;
 
-IR += 0.02*BMI*R_t - 0.01*IR;
+// stabilizzazione IR (soft saturation)
+IR += 0.02*BMI*R_t*(1 - IR) - 0.01*IR;
 
-V  += 0.05*R_t*(1+IR) - 0.03*V;
+// VLDL con saturazione minima
+V  += 0.05*R_t*(1+IR)/(1+0.5*V) - 0.03*V;
+
 TG += 0.04*V - 0.02*TG;
 HDL+= 0.01 - 0.03*V - 0.01*(HDL-1);
 
+// BMI
 BMI += 0.1*(Cal_t-1)/(1+C);
+
+// compensazione
 C   += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
+
 
 // INDICI
 let TGHDL = TG/(HDL+0.1);
 let IIML = HDL / ((TG+0.1)*(1+0.3*V));
 
-Risk = 0.97*Risk + 0.3*(1/IIML) + 0.1*BMI;
+// baseline iniziale
+if(IIML_baseline === null) IIML_baseline = IIML;
 
-// UI RISK
-let RiskIndex = 100 * (1 - Math.exp(-0.02 * Risk));
+// trasformazione stabile
+let IIML_raw = 1 / IIML;
+let IIML_effect = 0.10 * IIML_raw + 0.90 * prev_IIML_effect;
 
-// ARRAYS
+// deviazione centrata
+let IIML_dev = (IIML_effect / IIML_baseline) - 1;
+
+// RISK stabilizzato
+Risk = 0.985 * Risk + 0.18 * IIML_dev + 0.06 * (BMI - 23);
+
+// memoria
+prev_IIML_effect = IIML_effect;
+
+
+// OUTPUT ARRAYS
 bmiArr.push(BMI);
 tgArr.push(TG);
 hdlArr.push(HDL);
 iimlArr.push(IIML);
-riskArr.push(RiskIndex);
+riskArr.push(Risk);
 metArr.push(TGHDL);
 
 // TABLE
@@ -180,7 +204,7 @@ rows += `<tr>
 <td>${BMI.toFixed(2)}</td>
 <td>${TGHDL.toFixed(2)}</td>
 <td>${IIML.toFixed(3)}</td>
-<td>${RiskIndex.toFixed(1)}</td>
+<td>${(Risk*100).toFixed(1)}</td>
 </tr>`;
 }
 
@@ -210,7 +234,7 @@ datasets:[
 new Chart(document.getElementById("chartRisk"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"Risk Index",data:riskArr}]}
+datasets:[{label:"Risk (normalizzato)",data:riskArr}]}
 });
 
 new Chart(document.getElementById("chartTG"),{
@@ -219,19 +243,22 @@ data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
 datasets:[{label:"TG",data:tgArr},{label:"HDL",data:hdlArr}]}
 });
 
+
 // INTERPRETAZIONE
-let finalRisk = riskArr[riskArr.length-1];
+let finalRisk = riskArr[riskArr.length-1] * 100;
 let box = document.getElementById("interpretBox");
 
-if(finalRisk < 30){
+if(finalRisk < 25){
 box.className="green";
-box.innerHTML="<b>Scenario favorevole</b><br>Profilo metabolico stabile e basso rischio cardiovascolare.";
-} else if(finalRisk < 60){
+box.innerHTML="<b>Scenario favorevole</b><br>Profilo metabolico stabile.";
+}
+else if(finalRisk < 50){
 box.className="yellow";
-box.innerHTML="<b>Scenario intermedio</b><br>Segnali di progressivo stress metabolico.";
-} else {
+box.innerHTML="<b>Scenario intermedio</b><br>Progressivo stress metabolico.";
+}
+else{
 box.className="red";
-box.innerHTML="<b>Scenario critico</b><br>Elevato stress metabolico e aumento del rischio cardiovascolare.";
+box.innerHTML="<b>Scenario critico</b><br>Accumulo significativo di rischio metabolico.";
 }
 
 }
@@ -241,8 +268,8 @@ box.innerHTML="<b>Scenario critico</b><br>Elevato stress metabolico e aumento de
 
 <div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
 <b>Disclaimer</b><br>
-Questo strumento è un modello teorico-simulativo a scopo educativo e di ricerca concettuale.<br>
-Non è validato clinicamente e non costituisce in alcun modo consulenza medica, diagnosi o indicazione terapeutica.<br>
+Modello teorico-simulativo a scopo educativo.<br>
+Non è valido per uso clinico o diagnostico.
 </div>
 
 </body>
