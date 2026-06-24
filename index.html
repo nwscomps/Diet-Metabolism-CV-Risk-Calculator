@@ -38,7 +38,7 @@ canvas { margin-bottom: 25px; }
 
 <body>
 
-<h2>Modello Dieta–Metabolismo–Rischio CV (Carbohydrate Exposure Model)</h2>
+<h2>Modello Dieta–Metabolismo–Rischio CV</h2>
 
 <div class="container">
 
@@ -97,6 +97,10 @@ BMI iniziale:
 
 <script>
 
+// ======================
+// MAPPE DIETA
+// ======================
+
 const dietMap = {
 "Mediterranea":[0.55,1.00],
 "Occidentale":[0.75,1.08],
@@ -111,9 +115,9 @@ const compMap = {
 "Vegetale":[0.2,-0.05]
 };
 
-function ema(prev, val, a){
-    return a * val + (1 - a) * prev;
-}
+// ======================
+// MODELLO
+// ======================
 
 function run(){
 
@@ -123,105 +127,118 @@ let comp = document.getElementById("comp").value;
 let R = dietMap[diet][0] + compMap[comp][0];
 let Cal = dietMap[diet][1] + compMap[comp][1];
 
+let act = +document.getElementById("act").value;
+
+// ======================
+// PARAMETRI
+// ======================
+
+const G0 = 120;
+
+const alphaG = 60;
+const betaG = 0.8;
+
+const kup = 0.01;
+const kdown = 0.005;
+
+const aM = 0.015;
+const bV = 0.01;
+const cIR = 0.02;
+
+const aV = 0.05;
+const betaIR = 0.6;
+const bVclear = 0.03;
+
+const cTG = 0.04;
+const dTG = 0.03;
+
+const eHDL = 0.2;
+const kIR = 1.0;
+const kR = 0.4;
+const fV = 0.05;
+const gHDL = 0.03;
+
+const gB = 0.035;
+
+const rho = 0.97;
+
+// ======================
+// STATO
+// ======================
+
 let BMI = +document.getElementById("bmi0").value;
 
-// STATES
 let IR = 0.2;
+let M = 0;
 let V = 1;
 let TG = 120;
 let HDL = 50;
 let HDL0 = 50;
 let Risk = 0;
 
-// NEW: carbohydrate exposure memory
-let CarbExp = R;
-let GlyLoad = 0;
-
 let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
-
 let rows="";
+
+// ======================
+// LOOP
+// ======================
 
 for(let t=0;t<24;t++){
 
-// =======================
-// CARB EXPOSURE (MEMORY)
-// =======================
-CarbExp = 0.9 * CarbExp + 0.1 * R;
+// ----------------------
+// G(t) scostamento post-prandiale
+// ----------------------
+let G = G0 + alphaG * R * (1 + betaG * IR);
 
-// =======================
-// POSTPRANDIAL GLUCOSE
-// =======================
-
-let G = 90 + 80 * CarbExp;
-
-// =======================
-// CHRONIC GLYCEMIC LOAD
-// =======================
-
-const G0 = 120;
-
+// ----------------------
+// MEMORIA GLICEMICA
+// ----------------------
 let excess = Math.max(0, G - G0);
 let deficit = Math.max(0, G0 - G);
 
-GlyLoad =
-GlyLoad
-+ 0.005 * excess
-- 0.002 * deficit;
+M = M + kup * excess - kdown * deficit;
 
-GlyLoad = Math.max(0, GlyLoad);
-
-// =======================
-// INSULIN RESISTANCE
-// =======================
-
-IR =
-0.20
-+ 0.015 * BMI * GlyLoad
-+ 0.010 * V
-- 0.015 * document.getElementById("act").value;
-
+// ----------------------
+// IR dinamico
+// ----------------------
+IR = IR + aM * M + bV * V - cIR * IR;
 IR = Math.max(0.05, IR);
 
-// =======================
+// ----------------------
 // VLDL
-// =======================
-V =
-V
-+ 0.055 * CarbExp * (1 + IR)
-- 0.025 * V;
+// ----------------------
+V = V + aV * R * (1 + betaIR * IR) - bVclear * V;
 
-// =======================
-// TRIGLYCERIDES
-// =======================
-TG =
-TG
-+ 0.045 * V
-- 0.030 * TG;
+// ----------------------
+// TRIGLICERIDI
+// ----------------------
+TG = TG + cTG * V - dTG * TG;
 
-// =======================
-// HDL (balanced lipid + metabolic model)
-// =======================
+// ----------------------
+// HDL
+// ----------------------
 let HDL_target =
-    HDL
-    + 0.15
-    + 1.0 * (1 / (1 + IR))
-    + 0.6 * CarbExp
-    - 0.05 * V
-    - 0.02 * (HDL - HDL0);
+    eHDL
+    + kIR * (1 / (1 + IR))
+    + kR * R
+    - fV * V
+    - gHDL * (HDL - HDL0);
 
-HDL = HDL + 0.28 * (HDL_target - HDL);
+HDL = HDL + 0.3 * (HDL_target - HDL);
 
-// =======================
+// ----------------------
 // BMI
-// =======================
-BMI = BMI + 0.035 * (Cal - 1);
+// ----------------------
+BMI = BMI + gB * (Cal - 1);
 
-// =======================
+// ----------------------
 // RISK
-// =======================
-Risk = 0.97 * Risk + 0.05 * IR + 0.03 * (TG/HDL);
+// ----------------------
+Risk = rho * Risk + 0.04 * IR + 0.03 * (TG / HDL);
 
+// ----------------------
 // STORE
+// ----------------------
 bmiArr.push(BMI);
 tgArr.push(TG);
 hdlArr.push(HDL);
@@ -237,14 +254,20 @@ rows += `<tr>
 </tr>`;
 }
 
+// ======================
 // TABLE
+// ======================
+
 document.getElementById("table").innerHTML =
 `<table>
 <tr><th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th></tr>
 ${rows}
 </table>`;
 
+// ======================
 // CHARTS
+// ======================
+
 new Chart(document.getElementById("chartBMI"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
