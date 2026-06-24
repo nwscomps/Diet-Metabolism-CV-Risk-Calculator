@@ -32,13 +32,13 @@ td, th {
     font-size: 12px;
 }
 
-canvas { margin-bottom: 20px; }
+canvas { margin-bottom: 15px; }
 </style>
 </head>
 
 <body>
 
-<h2>Modello Dieta–Metabolismo–Rischio CV</h2>
+<h2>Modello Dieta–Metabolismo–Rischio CV (fisiologico)</h2>
 
 <div class="container">
 
@@ -83,7 +83,7 @@ BMI iniziale:
 <canvas id="chartBMI"></canvas>
 <canvas id="chartTG"></canvas>
 <canvas id="chartHDL"></canvas>
-<canvas id="chartRISK"></canvas>
+<canvas id="chartIR"></canvas>
 
 <div id="table"></div>
 
@@ -94,7 +94,7 @@ BMI iniziale:
 <script>
 
 // =====================
-// MAPPE
+// MAPPE DIETA
 // =====================
 
 const dietMap = {
@@ -112,14 +112,17 @@ const compMap = {
 };
 
 // =====================
-// CHART HANDLES
+// CLEAN CHART HANDLING
 // =====================
 let charts = [];
-
 function clearCharts(){
     charts.forEach(c => c.destroy());
     charts = [];
 }
+
+// =====================
+// RUN
+// =====================
 
 function run(){
 
@@ -131,12 +134,12 @@ let comp = document.getElementById("comp").value;
 let R = dietMap[diet][0] + compMap[comp][0];
 let Cal = dietMap[diet][1] + compMap[comp][1];
 
-// =====================
-// PARAMETRI
-// =====================
-
 let months = 24;
 let mealsPerMonth = 90;
+
+// =====================
+// STATO
+// =====================
 
 let BMI = +document.getElementById("bmi0").value;
 let IR = 0.2;
@@ -144,11 +147,10 @@ let V = 1;
 let TG = 120;
 let HDL = 50;
 let HDL0 = 50;
-let Risk = 0;
 
 let rows = "";
 
-let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
+let bmiArr=[], tgArr=[], hdlArr=[], irArr=[];
 
 // =====================
 // LOOP MENSILE
@@ -159,8 +161,9 @@ for(let m = 0; m < months; m++){
     let IR_signal = 0;
 
     // =====================
-    // LOOP PASTI (solo IR)
+    // LOOP PASTI (solo glicemia → IR)
     // =====================
+
     let G = 90;
 
     for(let t = 0; t < mealsPerMonth; t++){
@@ -170,7 +173,7 @@ for(let m = 0; m < months; m++){
 
         let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.4 * IR);
 
-        G = G + 0.45 * (G_target - G);
+        G += 0.5 * (G_target - G);
 
         let excess = Math.max(0, G - 120);
         let deficit = Math.max(0, 120 - G);
@@ -181,29 +184,33 @@ for(let m = 0; m < months; m++){
     }
 
     // =====================
-    // UPDATE IR
+    // IR (dinamica lenta)
     // =====================
+
     IR += IR_signal + 0.01 * V - 0.02 * IR;
     IR = Math.max(0.05, Math.min(IR, 5));
 
     // =====================
-    // VLDL
+    // VLDL (fegato)
     // =====================
+
     V += 0.05 * R * (1 + IR) - 0.03 * V;
     V = Math.max(0.1, V);
 
     // =====================
-    // TRIGLICERIDI
+    // TG
     // =====================
-    TG += 0.04 * V - 0.03 * TG;
+
+    TG += 0.05 * V - 0.03 * TG;
     TG = Math.max(20, TG);
 
     // =====================
-    // HDL STABILE
+    // HDL emergente
     // =====================
-    HDL += 0.2
+
+    HDL +=
+        0.25
         + 0.8 * (1 / (1 + IR))
-        + 0.3 * R
         - 0.05 * V
         - 0.02 * (HDL - HDL0);
 
@@ -212,61 +219,58 @@ for(let m = 0; m < months; m++){
     // =====================
     // BMI
     // =====================
-    BMI += 0.035 * (Cal - 1);
 
-    // =====================
-    // RISK
-    // =====================
-    Risk = 0.95 * Risk + 0.03 * IR + 0.02 * (TG / HDL);
+    BMI += 0.035 * (Cal - 1);
 
     // =====================
     // STORE
     // =====================
+
     bmiArr.push(BMI);
     tgArr.push(TG);
     hdlArr.push(HDL);
-    riskArr.push(Risk);
+    irArr.push(IR);
 
     rows += `<tr>
         <td>${m+1}</td>
         <td>${BMI.toFixed(2)}</td>
         <td>${TG.toFixed(0)}</td>
         <td>${HDL.toFixed(1)}</td>
-        <td>${(TG/HDL).toFixed(2)}</td>
-        <td>${Risk.toFixed(2)}</td>
+        <td>${IR.toFixed(3)}</td>
     </tr>`;
 }
 
 // =====================
 // TABLE
 // =====================
+
 document.getElementById("table").innerHTML =
 `<table>
-<tr><th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th></tr>
+<tr>
+<th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>IR</th>
+</tr>
 ${rows}
 </table>`;
 
 // =====================
 // CHARTS
 // =====================
-function makeChart(id, label, data){
-    let ctx = document.getElementById(id);
 
-    let chart = new Chart(ctx,{
+function makeChart(id, label, data){
+    let c = new Chart(document.getElementById(id),{
         type:"line",
         data:{
             labels:[...Array(months).keys()].map(i=>"M"+(i+1)),
             datasets:[{label, data}]
         }
     });
-
-    charts.push(chart);
+    charts.push(c);
 }
 
 makeChart("chartBMI","BMI",bmiArr);
 makeChart("chartTG","TG",tgArr);
 makeChart("chartHDL","HDL",hdlArr);
-makeChart("chartRISK","Risk",riskArr);
+makeChart("chartIR","IR",irArr);
 
 }
 
