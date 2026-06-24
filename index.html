@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Modello Dieta–Metabolismo–Rischio CV</title>
+<title>Modello Dieta–Metabolismo–CV</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -11,7 +11,7 @@ body { font-family: Arial; margin: 20px; }
 .container {
     display: grid;
     grid-template-columns: 320px 1fr;
-    gap: 25px;
+    gap: 20px;
 }
 
 .panel {
@@ -28,11 +28,11 @@ table {
 
 td, th {
     border: 1px solid #ddd;
-    padding: 5px;
+    padding: 4px;
     font-size: 12px;
 }
 
-canvas { margin-bottom: 25px; }
+canvas { margin-bottom: 20px; }
 </style>
 </head>
 
@@ -64,10 +64,6 @@ canvas { margin-bottom: 25px; }
 
 <br><br>
 
-Consistenza <input id="cons" type="number" value="0.8" step="0.1"><br><br>
-Surplus <input id="surp" type="number" value="0.0" step="0.05"><br><br>
-Attività <input id="act" type="number" value="0.3" step="0.1"><br><br>
-
 BMI iniziale:
 <select id="bmi0">
 <option value="20">Atletico</option>
@@ -97,9 +93,9 @@ BMI iniziale:
 
 <script>
 
-// ======================
-// MAPPE DIETA
-// ======================
+// =====================
+// MAPPE
+// =====================
 
 const dietMap = {
 "Mediterranea":[0.55,1.00],
@@ -115,11 +111,19 @@ const compMap = {
 "Vegetale":[0.2,-0.05]
 };
 
-// ======================
-// MODELLO
-// ======================
+// =====================
+// CHART HANDLES
+// =====================
+let charts = [];
+
+function clearCharts(){
+    charts.forEach(c => c.destroy());
+    charts = [];
+}
 
 function run(){
+
+clearCharts();
 
 let diet = document.getElementById("diet").value;
 let comp = document.getElementById("comp").value;
@@ -127,196 +131,142 @@ let comp = document.getElementById("comp").value;
 let R = dietMap[diet][0] + compMap[comp][0];
 let Cal = dietMap[diet][1] + compMap[comp][1];
 
-let act = +document.getElementById("act").value;
-
-// ======================
+// =====================
 // PARAMETRI
-// ======================
+// =====================
 
-const G0 = 120;
-
-const alphaG = 60;
-const betaG = 0.8;
-
-const kup = 0.01;
-const kdown = 0.005;
-
-const aM = 0.015;
-const bV = 0.01;
-const cIR = 0.02;
-
-const aV = 0.05;
-const betaIR = 0.6;
-const bVclear = 0.03;
-
-const cTG = 0.04;
-const dTG = 0.03;
-
-const eHDL = 0.2;
-const kIR = 1.0;
-const kR = 0.4;
-const fV = 0.05;
-const gHDL = 0.03;
-
-const gB = 0.035;
-
-const rho = 0.97;
-
-// ======================
-// STATO
-// ======================
+let months = 24;
+let mealsPerMonth = 90;
 
 let BMI = +document.getElementById("bmi0").value;
-
 let IR = 0.2;
-let M = 0;
 let V = 1;
 let TG = 120;
 let HDL = 50;
 let HDL0 = 50;
 let Risk = 0;
 
+let rows = "";
+
 let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
-let rows="";
-let G = 90;
 
-const mealsPerDay = 3;
-const daysPerMonth = 30;
-const N = mealsPerDay * daysPerMonth;
+// =====================
+// LOOP MENSILE
+// =====================
 
-for(let t = 0; t < N; t++){
+for(let m = 0; m < months; m++){
 
-    // ======================
-    // INPUT PASTO
-    // ======================
-    let CHO = R / (1 + R);
-    let glucoseLoad = 600 * CHO; 
-    // (2000 kcal / 3 pasti ≈ 600 kcal)
+    let IR_signal = 0;
 
-    // ======================
-    // GLICEMIA POST-PRANDIALE
-    // ======================
-    let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.6 * IR);
+    // =====================
+    // LOOP PASTI (solo IR)
+    // =====================
+    let G = 90;
 
-    G = G + 0.5 * (G_target - G);
+    for(let t = 0; t < mealsPerMonth; t++){
 
-    // ======================
-    // EVENTO GLICEMICO
-    // ======================
-    let G_excess = Math.max(0, G - 120);
-    let G_deficit = Math.max(0, 120 - G);
+        let CHO = R / (1 + R);
+        let glucoseLoad = 600 * CHO;
 
-    // ======================
-    // MEMORIA GLICEMICA
-    // ======================
-    M = M
-        + 0.01 * G_excess
-        - 0.005 * G_deficit;
+        let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.4 * IR);
 
-    // ======================
-    // IR: EVENT-BASED
-    // ======================
-    IR = IR
-        + 0.01 * G_excess
-        - 0.005 * G_deficit
-        + 0.005 * V
-        - 0.002 * IR;
+        G = G + 0.45 * (G_target - G);
 
-    // clamp minimo
-    IR = Math.max(0.05, IR);
+        let excess = Math.max(0, G - 120);
+        let deficit = Math.max(0, 120 - G);
 
-    // ======================
-    // RESET PARZIALE TRA PASTI
-    // ======================
-    G = 90 + 0.3 * (G - 90);
+        IR_signal += 0.01 * excess - 0.005 * deficit;
+
+        G = 90 + 0.3 * (G - 90);
+    }
+
+    // =====================
+    // UPDATE IR
+    // =====================
+    IR += IR_signal + 0.01 * V - 0.02 * IR;
+    IR = Math.max(0.05, Math.min(IR, 5));
+
+    // =====================
+    // VLDL
+    // =====================
+    V += 0.05 * R * (1 + IR) - 0.03 * V;
+    V = Math.max(0.1, V);
+
+    // =====================
+    // TRIGLICERIDI
+    // =====================
+    TG += 0.04 * V - 0.03 * TG;
+    TG = Math.max(20, TG);
+
+    // =====================
+    // HDL STABILE
+    // =====================
+    HDL += 0.2
+        + 0.8 * (1 / (1 + IR))
+        + 0.3 * R
+        - 0.05 * V
+        - 0.02 * (HDL - HDL0);
+
+    HDL = Math.max(10, HDL);
+
+    // =====================
+    // BMI
+    // =====================
+    BMI += 0.035 * (Cal - 1);
+
+    // =====================
+    // RISK
+    // =====================
+    Risk = 0.95 * Risk + 0.03 * IR + 0.02 * (TG / HDL);
+
+    // =====================
+    // STORE
+    // =====================
+    bmiArr.push(BMI);
+    tgArr.push(TG);
+    hdlArr.push(HDL);
+    riskArr.push(Risk);
+
+    rows += `<tr>
+        <td>${m+1}</td>
+        <td>${BMI.toFixed(2)}</td>
+        <td>${TG.toFixed(0)}</td>
+        <td>${HDL.toFixed(1)}</td>
+        <td>${(TG/HDL).toFixed(2)}</td>
+        <td>${Risk.toFixed(2)}</td>
+    </tr>`;
 }
 
-// ----------------------
-// VLDL
-// ----------------------
-V = V + aV * R * (1 + betaIR * IR) - bVclear * V;
-
-// ----------------------
-// TRIGLICERIDI
-// ----------------------
-TG = TG + cTG * V - dTG * TG;
-
-// ----------------------
-// HDL
-// ----------------------
-HDL =
-HDL
-+ eHDL
-+ kIR * (1/(1+IR))
-+ kR * R
-- fV * V
-- gHDL * (HDL - HDL0);
-
-// ----------------------
-// BMI
-// ----------------------
-BMI = BMI + gB * (Cal - 1);
-
-// ----------------------
-// RISK
-// ----------------------
-Risk = rho * Risk + 0.04 * IR + 0.03 * (TG / HDL);
-
-// ----------------------
-// STORE
-// ----------------------
-bmiArr.push(BMI);
-tgArr.push(TG);
-hdlArr.push(HDL);
-riskArr.push(Risk);
-
-rows += `<tr>
-<td>${t+1}</td>
-<td>${BMI.toFixed(2)}</td>
-<td>${TG.toFixed(0)}</td>
-<td>${HDL.toFixed(1)}</td>
-<td>${(TG/HDL).toFixed(2)}</td>
-<td>${Risk.toFixed(2)}</td>
-</tr>`;
-}
-
-// ======================
+// =====================
 // TABLE
-// ======================
-
+// =====================
 document.getElementById("table").innerHTML =
 `<table>
 <tr><th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th></tr>
 ${rows}
 </table>`;
 
-// ======================
+// =====================
 // CHARTS
-// ======================
+// =====================
+function makeChart(id, label, data){
+    let ctx = document.getElementById(id);
 
-new Chart(document.getElementById("chartBMI"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"BMI",data:bmiArr}]}
-});
+    let chart = new Chart(ctx,{
+        type:"line",
+        data:{
+            labels:[...Array(months).keys()].map(i=>"M"+(i+1)),
+            datasets:[{label, data}]
+        }
+    });
 
-new Chart(document.getElementById("chartTG"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"TG",data:tgArr}]}
-});
+    charts.push(chart);
+}
 
-new Chart(document.getElementById("chartHDL"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"HDL",data:hdlArr}]}
-});
-
-new Chart(document.getElementById("chartRISK"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"Risk",data:riskArr}]}
-});
+makeChart("chartBMI","BMI",bmiArr);
+makeChart("chartTG","TG",tgArr);
+makeChart("chartHDL","HDL",hdlArr);
+makeChart("chartRISK","Risk",riskArr);
 
 }
 
