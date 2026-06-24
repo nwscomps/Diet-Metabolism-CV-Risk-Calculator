@@ -180,22 +180,56 @@ let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
 let rows="";
 let G = 90;
 
-for(let t=0;t<24;t++){
+const mealsPerDay = 3;
+const daysPerMonth = 30;
+const N = mealsPerDay * daysPerMonth;
 
-let CHO = R / (1 + R);
+for(let t = 0; t < N; t++){
 
-let glucoseLoad = 2000 * CHO;
+    // ======================
+    // INPUT PASTO
+    // ======================
+    let CHO = R / (1 + R);
+    let glucoseLoad = 600 * CHO; 
+    // (2000 kcal / 3 pasti ≈ 600 kcal)
 
-let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.6 * IR);
+    // ======================
+    // GLICEMIA POST-PRANDIALE
+    // ======================
+    let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.6 * IR);
 
-G = G + 0.3 * (G_target - G);
+    G = G + 0.5 * (G_target - G);
 
-let M_excess = Math.max(0, G - 90);
-let M_deficit = Math.max(0, 90 - G);
+    // ======================
+    // EVENTO GLICEMICO
+    // ======================
+    let G_excess = Math.max(0, G - 120);
+    let G_deficit = Math.max(0, 120 - G);
 
-M = M + 0.01 * M_excess - 0.005 * M_deficit;
+    // ======================
+    // MEMORIA GLICEMICA
+    // ======================
+    M = M
+        + 0.01 * G_excess
+        - 0.005 * G_deficit;
 
-IR = IR + 0.02 * M + 0.01 * V - 0.01 * IR;
+    // ======================
+    // IR: EVENT-BASED
+    // ======================
+    IR = IR
+        + 0.01 * G_excess
+        - 0.005 * G_deficit
+        + 0.005 * V
+        - 0.002 * IR;
+
+    // clamp minimo
+    IR = Math.max(0.05, IR);
+
+    // ======================
+    // RESET PARZIALE TRA PASTI
+    // ======================
+    G = 90 + 0.3 * (G - 90);
+}
 
 // ----------------------
 // VLDL
