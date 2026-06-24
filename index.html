@@ -7,10 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body {
-    font-family: Arial;
-    margin: 20px;
-}
+body { font-family: Arial; margin: 20px; }
 
 .container {
     display: grid;
@@ -73,9 +70,9 @@ td, th {
 
 Consistenza <input id="cons" type="number" value="0.8" step="0.1"><br><br>
 Surplus <input id="surp" type="number" value="0.0" step="0.05"><br><br>
-Attività <input id="act" type="number" value="0.5" step="0.1"><br><br>
+Attività (ACT) <input id="act" type="number" value="0.3" step="0.1"><br><br>
 Zuccheri <input id="sug" type="number" value="0.2" step="0.1"><br><br>
-Alcol <input id="alc" type="number" value="0.2" step="0.1"><br><br>
+Alcol <input id="alc" type="number" value="0.1" step="0.1"><br><br>
 
 BMI iniziale:
 <select id="bmi0">
@@ -94,12 +91,12 @@ BMI iniziale:
 <!-- OUTPUT -->
 <div class="panel">
 
-<canvas id="chart"></canvas>
+<canvas id="chartBMI"></canvas>
+<canvas id="chartMet"></canvas>
+<canvas id="chartRisk"></canvas>
+<canvas id="chartTG"></canvas>
 
 <div id="table"></div>
-
-<br>
-
 <div id="interpretBox"></div>
 
 </div>
@@ -138,140 +135,114 @@ let ALC = +document.getElementById("alc").value;
 
 let BMI = +document.getElementById("bmi0").value;
 
-// stati iniziali
-let IR = 0.2;
-let V = 1;
-let TG = 1;
-let HDL = 1.2;
-let C = 0;
-let Risk = 0;
+let IR=0.2, V=1, TG=1, HDL=1.2, C=0, Risk=0;
 
-// output arrays
-let b = [];
-let tg_hdl = [];
-let iiml_arr = [];
-let risk_arr = [];
+let bmiArr=[], tgArr=[], hdlArr=[], iimlArr=[], riskArr=[], metArr=[];
 
-let rows = "";
+let rows="";
 
-// ---------------- SIMULAZIONE ----------------
-
-for(let t=0; t<24; t++){
+for(let t=0;t<24;t++){
 
 let noise = (1-CONS)*0.05*Math.random();
 
-let R_t = R + 0.15*SUG + noise;
-let Cal_t = Cal + SURP - 0.2*ACT + 0.05*ALC;
+let R_t = R + 0.08*SUG + noise;
+let Cal_t = Cal + SURP - 0.12*ACT + 0.03*ALC;
 
-// IR
-IR += 0.02 * BMI * R_t - 0.01 * IR;
+IR += 0.02*BMI*R_t - 0.01*IR;
 
-// VLDL
-V += 0.05 * R_t * (1 + IR) - 0.03 * V;
+V  += 0.05*R_t*(1+IR) - 0.03*V;
+TG += 0.04*V - 0.02*TG;
+HDL+= 0.01 - 0.03*V - 0.01*(HDL-1);
 
-// TG
-TG += 0.04 * V - 0.02 * TG;
+BMI += 0.1*(Cal_t-1)/(1+C);
+C   += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
 
-// HDL
-HDL += 0.01 - 0.03 * V - 0.01 * (HDL - 1);
+// INDICI
+let TGHDL = TG/(HDL+0.1);
+let IIML = HDL / ((TG+0.1)*(1+0.3*V));
 
-// BMI
-BMI += 0.1 * (Cal_t - 1) / (1 + C);
+Risk = 0.97*Risk + 0.3*(1/IIML) + 0.1*BMI;
 
-// compensazione
-C += 0.01 * (1 / (1 + (HDL / (TG + 0.1)))) - 0.005 * C;
+// UI RISK
+let RiskIndex = 100 * (1 - Math.exp(-0.02 * Risk));
 
-// ---------------- IIML ----------------
-let IIML = (HDL + 0.1) / ((TG + 0.1) * (1 + 0.5 * V));
+// ARRAYS
+bmiArr.push(BMI);
+tgArr.push(TG);
+hdlArr.push(HDL);
+iimlArr.push(IIML);
+riskArr.push(RiskIndex);
+metArr.push(TGHDL);
 
-// ---------------- RISK (CORRETTO) ----------------
-Risk = 0.97 * Risk + 0.5 * (1 / IIML) + 0.2 * BMI;
-
-// store
-b.push(BMI);
-tg_hdl.push(TG / HDL);
-iiml_arr.push(IIML);
-risk_arr.push(Risk);
-
-// table row
+// TABLE
 rows += `<tr>
 <td>${t+1}</td>
 <td>${BMI.toFixed(2)}</td>
-<td>${(TG/HDL).toFixed(2)}</td>
+<td>${TGHDL.toFixed(2)}</td>
 <td>${IIML.toFixed(3)}</td>
-<td>${Risk.toFixed(2)}</td>
+<td>${RiskIndex.toFixed(1)}</td>
 </tr>`;
 }
 
-// ---------------- TABLE ----------------
-
+// TABLE OUTPUT
 document.getElementById("table").innerHTML =
 `<table>
-<tr>
-<th>Mese</th>
-<th>BMI</th>
-<th>TG/HDL</th>
-<th>IIML</th>
-<th>Risk</th>
-</tr>
+<tr><th>Mese</th><th>BMI</th><th>TG/HDL</th><th>IIML</th><th>Risk</th></tr>
 ${rows}
 </table>`;
 
-// ---------------- CHART ----------------
-
-new Chart(document.getElementById("chart"), {
-type: "line",
-data: {
-labels: [...Array(24).keys()].map(i => "M" + (i+1)),
-datasets: [
-{label:"BMI", data:b},
-{label:"TG/HDL", data:tg_hdl},
-{label:"IIML", data:iiml_arr},
-{label:"Risk", data:risk_arr}
-]
-}
+// CHARTS
+new Chart(document.getElementById("chartBMI"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"BMI",data:bmiArr}]}
 });
 
-// ---------------- INTERPRETAZIONE ----------------
+new Chart(document.getElementById("chartMet"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[
+{label:"TG/HDL",data:metArr},
+{label:"IIML",data:iimlArr}
+]}
+});
 
-let BMIf = b[b.length-1];
-let RF = tg_hdl[tg_hdl.length-1];
-let KF = risk_arr[risk_arr.length-1];
+new Chart(document.getElementById("chartRisk"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"Risk Index",data:riskArr}]}
+});
 
-let score = 0;
+new Chart(document.getElementById("chartTG"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"TG",data:tgArr},{label:"HDL",data:hdlArr}]}
+});
 
-if(BMIf > 30) score += 2;
-else if(BMIf > 27) score += 1;
-
-if(RF > 2) score += 2;
-else if(RF > 1.5) score += 1;
-
-if(KF > 50) score += 2;
-else if(KF > 20) score += 1;
-
+// INTERPRETAZIONE
+let finalRisk = riskArr[riskArr.length-1];
 let box = document.getElementById("interpretBox");
 
-if(score <= 1){
-box.className = "green";
-box.innerHTML = "<b>Scenario favorevole</b><br>Stabilità metabolica e basso stress cardiovascolare.";
-}
-else if(score <= 3){
-box.className = "yellow";
-box.innerHTML = "<b>Scenario intermedio</b><br>Segnali di progressivo squilibrio metabolico.";
-}
-else{
-box.className = "red";
-box.innerHTML = "<b>Scenario critico</b><br>Aumento significativo del rischio cardiovascolare.";
+if(finalRisk < 30){
+box.className="green";
+box.innerHTML="<b>Scenario favorevole</b><br>Profilo metabolico stabile e basso rischio cardiovascolare.";
+} else if(finalRisk < 60){
+box.className="yellow";
+box.innerHTML="<b>Scenario intermedio</b><br>Segnali di progressivo stress metabolico.";
+} else {
+box.className="red";
+box.innerHTML="<b>Scenario critico</b><br>Elevato stress metabolico e aumento del rischio cardiovascolare.";
 }
 
 }
-
 </script>
 
-<!-- DISCLAIMER -->
+<br>
+
 <div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
 <b>Disclaimer</b><br>
-Modello teorico-simulativo a scopo educativo. Non costituisce consulenza medica.
+Questo strumento è un modello teorico-simulativo a scopo educativo e di ricerca concettuale.<br>
+Non è validato clinicamente e non costituisce in alcun modo consulenza medica, diagnosi o indicazione terapeutica.<br>
 </div>
 
 </body>
