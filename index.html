@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Modello Dieta–Metabolismo–Rischio CV</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    font-family: Arial;
+    margin: 20px;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+}
+
+.panel {
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+}
+
+.green { background: #e8f5e9; padding:10px; border-radius:8px; }
+.yellow { background: #fff8e1; padding:10px; border-radius:8px; }
+.red { background: #ffebee; padding:10px; border-radius:8px; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+td, th {
+    border: 1px solid #ddd;
+    padding: 5px;
+    font-size: 12px;
+}
+
+</style>
+</head>
+
+<body>
+
+<h2>Modello Dinamico Dieta–Metabolismo–Rischio CV</h2>
+
+<div class="container">
+
+<!-- INPUT -->
+<div class="panel">
+
+<h3>Input</h3>
+
+<select id="diet">
+<option>Mediterranea</option>
+<option>Occidentale</option>
+<option>Mediterranea low-fat</option>
+<option>Cheto moderata</option>
+<option>Cheto stretta</option>
+</select>
+
+<br><br>
+
+<select id="comp">
+<option>Animale</option>
+<option>Mista</option>
+<option>Vegetale</option>
+</select>
+
+<br><br>
+
+Consistenza <input id="cons" type="number" value="0.8" step="0.1"><br><br>
+Surplus <input id="surp" type="number" value="0.0" step="0.05"><br><br>
+Attività <input id="act" type="number" value="0.5" step="0.1"><br><br>
+Zuccheri <input id="sug" type="number" value="0.2" step="0.1"><br><br>
+Alcol <input id="alc" type="number" value="0.2" step="0.1"><br><br>
+
+BMI iniziale:
+<select id="bmi0">
+<option value="20">Atletico</option>
+<option value="23" selected>Normopeso</option>
+<option value="27">Sovrappeso</option>
+<option value="33">Obeso</option>
+</select>
+
+<br><br>
+
+<button onclick="run()">Simula</button>
+
+</div>
+
+<!-- OUTPUT -->
+<div class="panel">
+
+<canvas id="chart"></canvas>
+
+<div id="table"></div>
+
+<br>
+
+<div id="interpretBox"></div>
+
+</div>
+
+</div>
+
+<script>
+
+const dietMap = {
+"Mediterranea":[0.5,1.02],
+"Occidentale":[0.6,1.10],
+"Mediterranea low-fat":[0.65,1.00],
+"Cheto moderata":[0.25,1.02],
+"Cheto stretta":[0.15,0.98]
+};
+
+const compMap = {
+"Animale":[-0.2,0.05],
+"Mista":[0,0],
+"Vegetale":[0.25,-0.05]
+};
+
+function run(){
+
+let diet = document.getElementById("diet").value;
+let comp = document.getElementById("comp").value;
+
+let R = dietMap[diet][0] + compMap[comp][0];
+let Cal = dietMap[diet][1] + compMap[comp][1];
+
+let CONS = +document.getElementById("cons").value;
+let SURP = +document.getElementById("surp").value;
+let ACT = +document.getElementById("act").value;
+let SUG = +document.getElementById("sug").value;
+let ALC = +document.getElementById("alc").value;
+
+let BMI = +document.getElementById("bmi0").value;
+
+let IR=0.2, V=1, TG=1, HDL=1.2, C=0, Risk=0;
+
+let b=[], r=[], k=[];
+
+let rows="";
+
+for(let t=0;t<24;t++){
+
+let noise = (1-CONS)*0.05*Math.random();
+
+let R_t = R + 0.15*SUG + noise;
+let Cal_t = Cal + SURP - 0.2*ACT + 0.05*ALC;
+
+IR += 0.02*BMI*R_t - 0.01*IR;
+V  += 0.05*R_t*(1+IR) - 0.03*V;
+TG += 0.04*V - 0.02*TG;
+HDL+= 0.01 - 0.03*V - 0.01*(HDL-1);
+BMI+= 0.1*(Cal_t-1)/(1+C);
+C  += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
+
+Risk += 0.5*(1/(HDL/(TG+0.1))) + 0.2*BMI;
+
+b.push(BMI);
+r.push(TG/HDL);
+k.push(Risk);
+
+rows += `<tr>
+<td>${t+1}</td>
+<td>${BMI.toFixed(2)}</td>
+<td>${(TG/HDL).toFixed(2)}</td>
+<td>${Risk.toFixed(2)}</td>
+</tr>`;
+}
+
+// TAB
+document.getElementById("table").innerHTML =
+`<table>
+<tr><th>Mese</th><th>BMI</th><th>TG/HDL</th><th>Risk</th></tr>
+${rows}
+</table>`;
+
+// CHART
+new Chart(document.getElementById("chart"),{
+type:"line",
+data:{
+labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[
+{label:"BMI", data:b},
+{label:"TG/HDL", data:r},
+{label:"Risk", data:k}
+]
+}
+});
+
+// ---------------- INTERPRETAZIONE ----------------
+
+let BMIf = b[b.length-1];
+let RF = r[r.length-1];
+let KF = k[k.length-1];
+
+let score = 0;
+
+// scoring semplice ma robusto
+if(BMIf>30) score+=2;
+else if(BMIf>27) score+=1;
+
+if(RF>2) score+=2;
+else if(RF>1.5) score+=1;
+
+if(KF>50) score+=2;
+else if(KF>20) score+=1;
+
+let box = document.getElementById("interpretBox");
+
+if(score<=1){
+box.className="green";
+box.innerHTML=
+"<b>Scenario favorevole</b><br>" +
+"Il sistema mostra stabilità metabolica con basso stress lipidico e accumulo contenuto.";
+}
+else if(score<=3){
+box.className="yellow";
+box.innerHTML=
+"<b>Scenario intermedio</b><br>" +
+"È presente una progressiva tendenza al dismetabolismo. Evoluzione dipendente dalla durata dello stimolo.";
+}
+else{
+box.className="red";
+box.innerHTML=
+"<b>Scenario critico</b><br>" +
+"Si osserva un aumento significativo del carico metabolico e dell’adiposità. Pattern compatibile con progressivo rischio cardiovascolare.";
+}
+
+}
+
+</script>
+<div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
+<b>Disclaimer</b><br>
+Questo strumento è un modello teorico-simulativo a scopo educativo e di ricerca concettuale.<br>
+Non è validato clinicamente e non costituisce in alcun modo consulenza medica, diagnosi o indicazione terapeutica.<br>
+Le simulazioni rappresentano dinamiche astratte e semplificate di processi biologici e non devono essere utilizzate per decisioni sanitarie reali.
+</div>
+</body>
+</html>
