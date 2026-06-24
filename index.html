@@ -217,14 +217,13 @@ TG = TG + cTG * V - dTG * TG;
 // ----------------------
 // HDL
 // ----------------------
-let HDL_target =
-    eHDL
-    + kIR * (1 / (1 + IR))
-    + kR * R
-    - fV * V
-    - gHDL * (HDL - HDL0);
-
-HDL = HDL + 0.3 * (HDL_target - HDL);
+HDL =
+HDL
++ eHDL
++ kIR * (1/(1+IR))
++ kR * R
+- fV * V
+- gHDL * (HDL - HDL0);
 
 // ----------------------
 // BMI
