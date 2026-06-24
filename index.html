@@ -185,24 +185,20 @@ let rows="";
 
 for(let t=0;t<24;t++){
 
-// ----------------------
-// G(t) scostamento post-prandiale
-// ----------------------
-let G = G0 + alphaG * R * (1 + betaG * IR);
+let CHO = R / (1 + R);
 
-// ----------------------
-// MEMORIA GLICEMICA
-// ----------------------
-let excess = Math.max(0, G - G0);
-let deficit = Math.max(0, G0 - G);
+let glucoseLoad = 2000 * CHO;
 
-M = M + kup * excess - kdown * deficit;
+let G_target = 90 + 0.03 * glucoseLoad * (1 + 0.6 * IR);
 
-// ----------------------
-// IR dinamico
-// ----------------------
-IR = IR + aM * M + bV * V - cIR * IR;
-IR = Math.max(0.05, IR);
+G = G + 0.3 * (G_target - G);
+
+let M_excess = Math.max(0, G - 90);
+let M_deficit = Math.max(0, 90 - G);
+
+M = M + 0.01 * M_excess - 0.005 * M_deficit;
+
+IR = IR + 0.02 * M + 0.01 * V - 0.01 * IR;
 
 // ----------------------
 // VLDL
