@@ -2,12 +2,18 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Modello Dieta–Metabolismo–Rischio CV</title>
+<title>Modello Dieta–Metabolismo–CSI</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body { font-family: Arial; margin: 20px; }
+body {
+    font-family: Arial;
+    margin: 20px;
+    background: #fafafa;
+}
+
+h2 { margin-bottom: 20px; }
 
 .container {
     display: grid;
@@ -19,6 +25,7 @@ body { font-family: Arial; margin: 20px; }
     padding: 15px;
     border: 1px solid #ccc;
     border-radius: 10px;
+    background: white;
 }
 
 .green { background: #e8f5e9; padding:10px; border-radius:8px; }
@@ -29,19 +36,23 @@ table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
+    font-size: 12px;
 }
 
 td, th {
     border: 1px solid #ddd;
     padding: 5px;
-    font-size: 12px;
+}
+
+canvas {
+    margin-bottom: 60px; /* 👈 DISTANZA TRA GRAFICI */
 }
 </style>
 </head>
 
 <body>
 
-<h2>Modello Dinamico Dieta–Metabolismo–Rischio CV</h2>
+<h2>Modello Dinamico Dieta–Metabolismo–CSI</h2>
 
 <div class="container">
 
@@ -70,7 +81,7 @@ td, th {
 
 Consistenza <input id="cons" type="number" value="0.8" step="0.1"><br><br>
 Surplus <input id="surp" type="number" value="0.0" step="0.05"><br><br>
-Attività (ACT) <input id="act" type="number" value="0.3" step="0.1"><br><br>
+Attività <input id="act" type="number" value="0.4" step="0.1"><br><br>
 Zuccheri <input id="sug" type="number" value="0.2" step="0.1"><br><br>
 Alcol <input id="alc" type="number" value="0.1" step="0.1"><br><br>
 
@@ -92,11 +103,12 @@ BMI iniziale:
 <div class="panel">
 
 <canvas id="chartBMI"></canvas>
-<canvas id="chartMet"></canvas>
+<canvas id="chartLipid"></canvas>
+<canvas id="chartIIML"></canvas>
 <canvas id="chartRisk"></canvas>
-<canvas id="chartTG"></canvas>
 
 <div id="table"></div>
+<br>
 <div id="interpretBox"></div>
 
 </div>
@@ -119,6 +131,10 @@ const compMap = {
 "Vegetale":[0.25,-0.05]
 };
 
+// 👇 SOLO OUTPUT SCALING (non modello)
+const TG_SCALE = 120;
+const HDL_SCALE = 50;
+
 function run(){
 
 let diet = document.getElementById("diet").value;
@@ -135,14 +151,10 @@ let ALC = +document.getElementById("alc").value;
 
 let BMI = +document.getElementById("bmi0").value;
 
-// stati iniziali
-let IR = 0.2, V = 1, TG = 1, HDL = 1.2, C = 0, Risk = 0;
+let IR=0.2, V=1, TG=1, HDL=1.2, C=0;
+let Risk=0, prevIIML=1;
 
-let prev_IIML_effect = 1;
-let IIML_baseline = null;
-
-// arrays
-let bmiArr=[], tgArr=[], hdlArr=[], iimlArr=[], riskArr=[], metArr=[];
+let bmiArr=[], tgArr=[], hdlArr=[], iimlArr=[], riskArr=[];
 
 let rows="";
 
@@ -153,123 +165,116 @@ let noise = (1-CONS)*0.05*Math.random();
 let R_t = R + 0.08*SUG + noise;
 let Cal_t = Cal + SURP - 0.12*ACT + 0.03*ALC;
 
-// stabilizzazione IR (soft saturation)
-IR += 0.02*BMI*R_t*(1 - IR) - 0.01*IR;
+// --- dinamica ---
+IR += 0.02*BMI*R_t - 0.01*IR;
 
-// VLDL con saturazione minima
-V  += 0.05*R_t*(1+IR)/(1+0.5*V) - 0.03*V;
+V  += 0.05*R_t*(1+IR) - 0.03*V;
 
 TG += 0.04*V - 0.02*TG;
 HDL+= 0.01 - 0.03*V - 0.01*(HDL-1);
 
-// BMI
-BMI += 0.1*(Cal_t-1)/(1+C);
+BMI += 0.1*(Cal_t-1);
 
-// compensazione
 C   += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
 
-
-// INDICI
+// --- INDICI ---
 let TGHDL = TG/(HDL+0.1);
 let IIML = HDL / ((TG+0.1)*(1+0.3*V));
 
-// baseline iniziale
-if(IIML_baseline === null) IIML_baseline = IIML;
+// smoothing IIML effect
+let IIML_effect = 0.05*(1/IIML) + 0.95*prevIIML;
+prevIIML = IIML_effect;
 
-// trasformazione stabile
-let IIML_raw = 1 / IIML;
-let IIML_effect = 0.10 * IIML_raw + 0.90 * prev_IIML_effect;
+// 🔥 CSI (ex Risk, ora stato)
+Risk = 0.97*Risk + 0.3*(IIML_effect - 1) + 0.1*(BMI - 23);
 
-// deviazione centrata
-let IIML_dev = (IIML_effect / IIML_baseline) - 1;
+// --- OUTPUT SCALED ---
+let TG_ui = TG * TG_SCALE;
+let HDL_ui = HDL * HDL_SCALE;
 
-// RISK stabilizzato
-Risk = 0.985 * Risk + 0.18 * IIML_dev + 0.06 * (BMI - 23);
-
-// memoria
-prev_IIML_effect = IIML_effect;
-
-
-// OUTPUT ARRAYS
+// --- arrays ---
 bmiArr.push(BMI);
-tgArr.push(TG);
-hdlArr.push(HDL);
+tgArr.push(TG_ui);
+hdlArr.push(HDL_ui);
 iimlArr.push(IIML);
 riskArr.push(Risk);
-metArr.push(TGHDL);
 
-// TABLE
 rows += `<tr>
 <td>${t+1}</td>
 <td>${BMI.toFixed(2)}</td>
-<td>${TGHDL.toFixed(2)}</td>
+<td>${TG_ui.toFixed(0)}</td>
+<td>${HDL_ui.toFixed(0)}</td>
 <td>${IIML.toFixed(3)}</td>
-<td>${(Risk*100).toFixed(1)}</td>
+<td>${Risk.toFixed(2)}</td>
 </tr>`;
 }
 
-// TABLE OUTPUT
+// TABLE
 document.getElementById("table").innerHTML =
 `<table>
-<tr><th>Mese</th><th>BMI</th><th>TG/HDL</th><th>IIML</th><th>Risk</th></tr>
+<tr><th>Mese</th><th>BMI</th><th>TG (mg/dL)</th><th>HDL (mg/dL)</th><th>IIML</th><th>CSI</th></tr>
 ${rows}
 </table>`;
 
-// CHARTS
-new Chart(document.getElementById("chartBMI"),{
+// CHART COLORS (no duplicazioni monotone)
+function mkChart(id, labels, datasets){
+new Chart(document.getElementById(id),{
 type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"BMI",data:bmiArr}]}
+data:{labels,datasets},
+options:{responsive:true}
 });
+}
 
-new Chart(document.getElementById("chartMet"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[
-{label:"TG/HDL",data:metArr},
-{label:"IIML",data:iimlArr}
-]}
-});
+let labels=[...Array(24).keys()].map(i=>"M"+(i+1));
 
-new Chart(document.getElementById("chartRisk"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"Risk (normalizzato)",data:riskArr}]}
-});
+// BMI
+mkChart("chartBMI", labels, [
+{label:"BMI", data:bmiArr, borderColor:"#1f77b4"}
+]);
 
-new Chart(document.getElementById("chartTG"),{
-type:"line",
-data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"TG",data:tgArr},{label:"HDL",data:hdlArr}]}
-});
+// Lipidi
+mkChart("chartLipid", labels, [
+{label:"TG", data:tgArr, borderColor:"#d62728"},
+{label:"HDL", data:hdlArr, borderColor:"#2ca02c"}
+]);
 
+// IIML
+mkChart("chartIIML", labels, [
+{label:"IIML", data:iimlArr, borderColor:"#9467bd"}
+]);
+
+// CSI
+mkChart("chartRisk", labels, [
+{label:"CSI", data:riskArr, borderColor:"#ff7f0e"}
+]);
 
 // INTERPRETAZIONE
-let finalRisk = riskArr[riskArr.length-1] * 100;
+let finalRisk = riskArr[riskArr.length-1];
 let box = document.getElementById("interpretBox");
 
-if(finalRisk < 25){
+if(finalRisk < -2){
 box.className="green";
-box.innerHTML="<b>Scenario favorevole</b><br>Profilo metabolico stabile.";
+box.innerHTML="<b>Equilibrio metabolico</b><br>Stato fisiologico stabile.";
 }
-else if(finalRisk < 50){
+else if(finalRisk < 5){
 box.className="yellow";
-box.innerHTML="<b>Scenario intermedio</b><br>Progressivo stress metabolico.";
+box.innerHTML="<b>Transizione metabolica</b><br>Lieve stress regolabile.";
 }
 else{
 box.className="red";
-box.innerHTML="<b>Scenario critico</b><br>Accumulo significativo di rischio metabolico.";
+box.innerHTML="<b>Stress metabolico</b><br>Assetto dismetabolico stabile.";
 }
 
 }
+
 </script>
 
 <br>
 
 <div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
 <b>Disclaimer</b><br>
-Modello teorico-simulativo a scopo educativo.<br>
-Non è valido per uso clinico o diagnostico.
+Modello teorico-simulativo non clinico.<br>
+Non utilizzabile per diagnosi o decisioni mediche.
 </div>
 
 </body>
