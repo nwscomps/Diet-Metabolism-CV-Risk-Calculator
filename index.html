@@ -2,12 +2,12 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Modello Dieta–Metabolismo–CSI (coerente)</title>
+<title>Modello Dieta–Metabolismo–Rischio CV</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body { font-family: Arial; margin: 20px; background:#fafafa; }
+body { font-family: Arial; margin: 20px; }
 
 .container {
     display: grid;
@@ -19,33 +19,33 @@ body { font-family: Arial; margin: 20px; background:#fafafa; }
     padding: 15px;
     border: 1px solid #ccc;
     border-radius: 10px;
-    background:white;
+}
+
+canvas {
+    margin-bottom: 25px;
 }
 
 .green { background:#e8f5e9; padding:10px; border-radius:8px; }
 .yellow { background:#fff8e1; padding:10px; border-radius:8px; }
-.orange { background:#fff3e0; padding:10px; border-radius:8px; }
 .red { background:#ffebee; padding:10px; border-radius:8px; }
 
 table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 12px;
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
 }
 
 td, th {
-    border: 1px solid #ddd;
-    padding: 5px;
+    border:1px solid #ddd;
+    padding:5px;
+    font-size:12px;
 }
-
-canvas { margin-bottom: 45px; }
 </style>
 </head>
 
 <body>
 
-<h2>Modello Dieta–Metabolismo–CSI</h2>
+<h2>Modello Dieta–Metabolismo–Rischio CV</h2>
 
 <div class="container">
 
@@ -74,7 +74,7 @@ canvas { margin-bottom: 45px; }
 
 Consistenza <input id="cons" type="number" value="0.8" step="0.1"><br><br>
 Surplus <input id="surp" type="number" value="0.0" step="0.05"><br><br>
-Attività <input id="act" type="number" value="0.4" step="0.1"><br><br>
+Attività <input id="act" type="number" value="0.3" step="0.1"><br><br>
 Zuccheri <input id="sug" type="number" value="0.2" step="0.1"><br><br>
 Alcol <input id="alc" type="number" value="0.1" step="0.1"><br><br>
 
@@ -89,6 +89,7 @@ BMI iniziale:
 <br><br>
 
 <button onclick="run()">Simula</button>
+<button onclick="stressTest()">Stress Test</button>
 
 </div>
 
@@ -96,12 +97,11 @@ BMI iniziale:
 <div class="panel">
 
 <canvas id="chartBMI"></canvas>
-<canvas id="chartLipids"></canvas>
+<canvas id="chartTGHDL"></canvas>
 <canvas id="chartIIML"></canvas>
 <canvas id="chartCSI"></canvas>
 
 <div id="table"></div>
-<br>
 <div id="interpretBox"></div>
 
 </div>
@@ -109,6 +109,10 @@ BMI iniziale:
 </div>
 
 <script>
+
+/* =========================
+   MAPPE DIETA
+========================= */
 
 const dietMap = {
 "Mediterranea":[0.5,1.02],
@@ -124,8 +128,28 @@ const compMap = {
 "Vegetale":[0.25,-0.05]
 };
 
+/* =========================
+   CHART HANDLES
+========================= */
+
+let charts = {};
+
+/* =========================
+   SIMULAZIONE PRINCIPALE
+========================= */
+
 function run(){
 
+// reset UI
+document.getElementById("table").innerHTML = "";
+document.getElementById("interpretBox").className = "";
+document.getElementById("interpretBox").innerHTML = "";
+
+// reset charts
+Object.values(charts).forEach(c => c.destroy());
+charts = {};
+
+// input
 let diet = document.getElementById("diet").value;
 let comp = document.getElementById("comp").value;
 
@@ -134,16 +158,18 @@ let Cal = dietMap[diet][1] + compMap[comp][1];
 
 let CONS = +document.getElementById("cons").value;
 let SURP = +document.getElementById("surp").value;
-let ACT = +document.getElementById("act").value;
-let SUG = +document.getElementById("sug").value;
-let ALC = +document.getElementById("alc").value;
+let ACT  = +document.getElementById("act").value;
+let SUG  = +document.getElementById("sug").value;
+let ALC  = +document.getElementById("alc").value;
 
 let BMI = +document.getElementById("bmi0").value;
 
-let IR = 0.2, V = 1, TG = 1, HDL = 1.2;
-let C = 0, CSI = 0, prevIIML = 1;
+// stato
+let IR=0.2, V=1, TG=1, HDL=1.2;
+let CSI=0, prevIIML=1;
 
-let bmiArr=[], tgArr=[], hdlArr=[], iimlArr=[], csiArr=[];
+// serie
+let bmiArr=[], tgArr=[], hdlArr=[], tgHdlArr=[], iimlArr=[], csiArr=[];
 
 let rows="";
 
@@ -154,129 +180,166 @@ let noise = (1-CONS)*0.05*Math.random();
 let R_t = R + 0.08*SUG + noise;
 let Cal_t = Cal + SURP - 0.12*ACT + 0.03*ALC;
 
-// =========================
-// METABOLISMO INTERNO
-// =========================
-
+/* ===== metabolico ===== */
 IR += 0.02*BMI*R_t - 0.01*IR;
-
 V  += 0.05*R_t*(1+IR) - 0.03*V;
 
-// =========================
-// CORREZIONE STRUTTURALE: R DIRETTO SU LIPIDI
-// =========================
+/* ===== deviazione regime ===== */
+let dR = R_t - 0.5;
 
-TG  += 0.04*V - 0.02*TG + 0.015*R_t;
-HDL += 0.01 - 0.03*V - 0.01*(HDL-1) - 0.012*R_t;
+/* ===== lipidi coerenti ===== */
+TG  += 0.04*V - 0.02*TG + 0.03*dR;
+HDL += 0.01 - 0.03*V - 0.01*(HDL-1) - 0.02*dR;
 
-// =========================
-// BMI
-// =========================
-
+/* ===== struttura ===== */
 BMI += 0.1*(Cal_t-1);
+BMI = Math.max(18, BMI); // vincolo fisiologico
 
-// =========================
-// COMPENSAZIONE
-// =========================
-
-C += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
-
-// =========================
-// INDICI
-// =========================
-
+/* ===== indici ===== */
 let TGHDL = TG/(HDL+0.1);
 let IIML = HDL / ((TG+0.1)*(1+0.3*V));
 
 let IIML_effect = 0.05*(1/IIML) + 0.95*prevIIML;
 prevIIML = IIML_effect;
 
-// CSI
+/* ===== CSI ===== */
 CSI = 0.97*CSI + 0.3*(IIML_effect - 1) + 0.1*(BMI - 23);
 
-// =========================
-// OUTPUT
-// =========================
+/* ===== scaling display ===== */
+let CSI_UI = 100*(1 - Math.exp(-0.03*CSI));
 
+/* ===== store ===== */
 bmiArr.push(BMI);
-tgArr.push(TG * 120);
-hdlArr.push(HDL * 50);
+tgArr.push(TG);
+hdlArr.push(HDL);
+tgHdlArr.push(TGHDL);
 iimlArr.push(IIML);
-csiArr.push(CSI);
+csiArr.push(CSI_UI);
 
 rows += `<tr>
 <td>${t+1}</td>
 <td>${BMI.toFixed(2)}</td>
-<td>${(TG*120).toFixed(0)}</td>
-<td>${(HDL*50).toFixed(0)}</td>
+<td>${(TG*100).toFixed(0)}</td>
+<td>${(HDL*100).toFixed(0)}</td>
 <td>${IIML.toFixed(3)}</td>
-<td>${CSI.toFixed(2)}</td>
+<td>${CSI_UI.toFixed(1)}</td>
 </tr>`;
 }
 
-// =========================
-// TABELLA
-// =========================
+/* ===== TABLE ===== */
 
-document.getElementById("table").innerHTML =
-`<table>
-<tr><th>Mese</th><th>BMI</th><th>TG (mg/dL)</th><th>HDL (mg/dL)</th><th>IIML</th><th>CSI</th></tr>
-${rows}
-</table>`;
+document.getElementById("table").innerHTML = `
+<table>
+<tr>
+<th>Mese</th><th>BMI</th><th>TG (mg/dL)</th><th>HDL (mg/dL)</th><th>IIML</th><th>CSI</th>
+</tr>${rows}</table>`;
 
-// =========================
-// GRAFICI
-// =========================
+/* ===== CHARTS ===== */
 
-function plot(id, data, color, label){
-new Chart(document.getElementById(id),{
+charts.bmi = new Chart(document.getElementById("chartBMI"),{
 type:"line",
-data:{
-labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label, data, borderColor:color}]
-}
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"BMI",data:bmiArr}]}
 });
-}
 
-plot("chartBMI", bmiArr, "#1f77b4", "BMI");
-plot("chartLipids", tgArr, "#d62728", "TG");
-plot("chartIIML", iimlArr, "#9467bd", "IIML");
-plot("chartCSI", csiArr, "#ff7f0e", "CSI");
+charts.met = new Chart(document.getElementById("chartTGHDL"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[
+{label:"TG/HDL",data:tgHdlArr},
+{label:"TG",data:tgArr},
+{label:"HDL",data:hdlArr}
+]}
+});
 
-// =========================
-// INTERPRETAZIONE
-// =========================
+charts.iiml = new Chart(document.getElementById("chartIIML"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"IIML",data:iimlArr}]}
+});
 
-let final = csiArr[csiArr.length-1];
+charts.csi = new Chart(document.getElementById("chartCSI"),{
+type:"line",
+data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
+datasets:[{label:"CSI",data:csiArr}]}
+});
+
+/* ===== INTERPRETAZIONE ===== */
+
+let finalCSI = csiArr[csiArr.length-1];
 let box = document.getElementById("interpretBox");
 
-if(final < 0.8){
+if(finalCSI < 20){
 box.className="green";
-box.innerHTML="<b>Equilibrio metabolico</b><br>Assetto stabile fisiologico.";
+box.innerHTML="Profilo stabile con bassa progressione dismetabolica.";
 }
-else if(final < 1.5){
+else if(finalCSI < 60){
 box.className="yellow";
-box.innerHTML="<b>Progressivo spostamento verso assetto dismetabolico</b><br>Alterazioni iniziali dei marker.";
-}
-else if(final < 2.5){
-box.className="orange";
-box.innerHTML="<b>Dismetabolismo evidente</b><br>Alterazioni metaboliche consolidate.";
+box.innerHTML="Progressivo spostamento verso assetto dismetabolico.";
 }
 else{
 box.className="red";
-box.innerHTML="<b>Instabilità metabolica avanzata</b><br>Profilo ad alto rischio cardiovascolare.";
+box.innerHTML="Elevata attivazione del rischio cardiovascolare.";
 }
 
+}
+
+/* =========================
+   STRESS TEST
+========================= */
+
+function simulate(diet){
+
+let R = dietMap[diet][0];
+let Cal = dietMap[diet][1];
+
+let BMI = 23;
+let IR=0.2, V=1, TG=1, HDL=1.2;
+let CSI=0, prevIIML=1;
+
+for(let t=0;t<24;t++){
+
+IR += 0.02*BMI*R;
+V  += 0.05*R*(1+IR);
+
+let dR = R - 0.5;
+
+TG  += 0.04*V + 0.03*dR;
+HDL += 0.01 - 0.03*V - 0.02*dR;
+
+BMI += 0;
+
+let IIML = HDL / ((TG+0.1)*(1+0.3*V));
+let IIML_effect = 0.05*(1/IIML) + 0.95*prevIIML;
+prevIIML = IIML_effect;
+
+CSI = 0.97*CSI + 0.3*(IIML_effect - 1);
+}
+
+return CSI;
+}
+
+function stressTest(){
+
+let diets = ["Mediterranea","Occidentale","Cheto moderata","Cheto stretta"];
+
+let results = diets.map(d => ({
+diet:d,
+CSI:simulate(d)
+}));
+
+console.table(results);
+
+alert("Stress test completato (vedi console)");
 }
 
 </script>
 
 <br>
 
-<div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
+<div style="font-size:12px;color:#666;border-top:1px solid #ccc;padding-top:10px;">
 <b>Disclaimer</b><br>
-Modello teorico-simulativo non clinico.<br>
-Non costituisce diagnosi o indicazione terapeutica.
+Modello teorico-simulativo non clinico. Non utilizzare per decisioni mediche.
 </div>
 
 </body>
