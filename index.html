@@ -85,8 +85,8 @@ BMI iniziale:
 <div class="panel">
 
 <canvas id="chartBMI"></canvas>
-<canvas id="chartMET"></canvas>
-<canvas id="chartLIP"></canvas>
+<canvas id="chartTG"></canvas>
+<canvas id="chartHDL"></canvas>
 <canvas id="chartRISK"></canvas>
 
 <div id="table"></div>
@@ -96,8 +96,6 @@ BMI iniziale:
 </div>
 
 <script>
-
-let charts = [];
 
 const dietMap = {
 "Mediterranea":[0.55,1.00],
@@ -117,14 +115,7 @@ function ema(prev, val, a){
     return a * val + (1 - a) * prev;
 }
 
-function destroyCharts(){
-    charts.forEach(c => c.destroy());
-    charts = [];
-}
-
 function run(){
-
-destroyCharts();
 
 let diet = document.getElementById("diet").value;
 let comp = document.getElementById("comp").value;
@@ -140,61 +131,59 @@ let TG = 120;
 let HDL = 50;
 let HDL0 = 50;
 
-let C = 0;
 let Risk = 0;
-
 let Rbar = R;
 
-let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[], metArr=[], vArr=[];
+let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[], vArr=[];
 
 let rows="";
 
 for(let t=0;t<24;t++){
 
-let R_t = R;
-Rbar = ema(Rbar, R_t, 0.15);
+// smoothing dieta
+Rbar = ema(Rbar, R, 0.2);
 
-// semplificato (resto invariato)
-IR = IR + 0.015 * BMI * Rbar + 0.02 * V - 0.02 * IR;
+// IR (più sensibile a R)
+IR = IR + 0.018 * BMI * Rbar + 0.025 * V - 0.02 * IR;
 
-V  = V + 0.03 * R_t * (1 + IR) - 0.02 * V;
+// VLDL (R più dominante)
+V = V + 0.05 * Rbar * (1 + 1.5 * IR) - 0.025 * V;
 
-TG = TG + 0.04 * V - 0.03 * TG;
+// TG
+TG = TG + 0.045 * V - 0.03 * TG;
 
-// =========================
-// HDL CORRETTO (FIX CHIAVE)
-// =========================
+// =======================
+// HDL (FIX PRINCIPALE)
+// =======================
 
-let e = 0.15;
-let k1 = 0.8;
-let k2 = 0.6;
-let f = 0.04;
-let g = 0.05;
-
-let S_R = Rbar;
+let e = 0.18;
+let k1 = 1.1;
+let k2 = 0.75;
+let f = 0.05;
+let g = 0.03;
 
 let HDL_target =
     HDL
     + e
     + k1 * (1 / (1 + IR))
-    + k2 * S_R
+    + k2 * Rbar
     - f * V
     - g * (HDL - HDL0);
 
-HDL = HDL + 0.15 * (HDL_target - HDL);
+// risposta più reattiva (meno rigidità)
+HDL = HDL + 0.25 * (HDL_target - HDL);
 
-// BMI lento
-BMI = BMI + 0.05 * (Cal - 1);
+// BMI
+BMI = BMI + 0.04 * (Cal - 1);
 
-// risk
-Risk = 0.98 * Risk + 0.05 * IR + 0.02 * (TG/HDL) - 0.03 * HDL;
+// Risk
+Risk = 0.97 * Risk + 0.06 * IR + 0.03 * (TG/HDL) - 0.02 * HDL;
 
-// arrays
+// store
 bmiArr.push(BMI);
 tgArr.push(TG);
 hdlArr.push(HDL);
 riskArr.push(Risk);
-metArr.push(TG/HDL);
 vArr.push(V);
 
 rows += `<tr>
@@ -215,33 +204,29 @@ ${rows}
 </table>`;
 
 // charts
-charts.push(new Chart(document.getElementById("chartBMI"),{
+new Chart(document.getElementById("chartBMI"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
 datasets:[{label:"BMI",data:bmiArr}]}
-}));
+});
 
-charts.push(new Chart(document.getElementById("chartMET"),{
+new Chart(document.getElementById("chartTG"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[{label:"TG/HDL",data:metArr}]}
-}));
+datasets:[{label:"TG",data:tgArr}]}
+});
 
-charts.push(new Chart(document.getElementById("chartLIP"),{
+new Chart(document.getElementById("chartHDL"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[
-{label:"TG",data:tgArr},
-{label:"HDL",data:hdlArr},
-{label:"VLDL",data:vArr}
-]}
-}));
+datasets:[{label:"HDL",data:hdlArr}]}
+});
 
-charts.push(new Chart(document.getElementById("chartRISK"),{
+new Chart(document.getElementById("chartRISK"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
 datasets:[{label:"Risk",data:riskArr}]}
-}));
+});
 
 }
 
