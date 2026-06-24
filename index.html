@@ -39,7 +39,6 @@ td, th {
     padding: 5px;
     font-size: 12px;
 }
-
 </style>
 </head>
 
@@ -139,56 +138,96 @@ let ALC = +document.getElementById("alc").value;
 
 let BMI = +document.getElementById("bmi0").value;
 
-let IR=0.2, V=1, TG=1, HDL=1.2, C=0, Risk=0;
+// stati iniziali
+let IR = 0.2;
+let V = 1;
+let TG = 1;
+let HDL = 1.2;
+let C = 0;
+let Risk = 0;
 
-let b=[], r=[], k=[];
+// output arrays
+let b = [];
+let tg_hdl = [];
+let iiml_arr = [];
+let risk_arr = [];
 
-let rows="";
+let rows = "";
 
-for(let t=0;t<24;t++){
+// ---------------- SIMULAZIONE ----------------
+
+for(let t=0; t<24; t++){
 
 let noise = (1-CONS)*0.05*Math.random();
 
 let R_t = R + 0.15*SUG + noise;
 let Cal_t = Cal + SURP - 0.2*ACT + 0.05*ALC;
 
-IR += 0.02*BMI*R_t - 0.01*IR;
-V  += 0.05*R_t*(1+IR) - 0.03*V;
-TG += 0.04*V - 0.02*TG;
-HDL+= 0.01 - 0.03*V - 0.01*(HDL-1);
-BMI+= 0.1*(Cal_t-1)/(1+C);
-C  += 0.01*(1/(1+(HDL/(TG+0.1)))) - 0.005*C;
+// IR
+IR += 0.02 * BMI * R_t - 0.01 * IR;
 
-Risk += 0.5*(1/(HDL/(TG+0.1))) + 0.2*BMI;
+// VLDL
+V += 0.05 * R_t * (1 + IR) - 0.03 * V;
 
+// TG
+TG += 0.04 * V - 0.02 * TG;
+
+// HDL
+HDL += 0.01 - 0.03 * V - 0.01 * (HDL - 1);
+
+// BMI
+BMI += 0.1 * (Cal_t - 1) / (1 + C);
+
+// compensazione
+C += 0.01 * (1 / (1 + (HDL / (TG + 0.1)))) - 0.005 * C;
+
+// ---------------- IIML ----------------
+let IIML = (HDL + 0.1) / ((TG + 0.1) * (1 + 0.5 * V));
+
+// ---------------- RISK (CORRETTO) ----------------
+Risk = 0.97 * Risk + 0.5 * (1 / IIML) + 0.2 * BMI;
+
+// store
 b.push(BMI);
-r.push(TG/HDL);
-k.push(Risk);
+tg_hdl.push(TG / HDL);
+iiml_arr.push(IIML);
+risk_arr.push(Risk);
 
+// table row
 rows += `<tr>
 <td>${t+1}</td>
 <td>${BMI.toFixed(2)}</td>
 <td>${(TG/HDL).toFixed(2)}</td>
+<td>${IIML.toFixed(3)}</td>
 <td>${Risk.toFixed(2)}</td>
 </tr>`;
 }
 
-// TAB
+// ---------------- TABLE ----------------
+
 document.getElementById("table").innerHTML =
 `<table>
-<tr><th>Mese</th><th>BMI</th><th>TG/HDL</th><th>Risk</th></tr>
+<tr>
+<th>Mese</th>
+<th>BMI</th>
+<th>TG/HDL</th>
+<th>IIML</th>
+<th>Risk</th>
+</tr>
 ${rows}
 </table>`;
 
-// CHART
-new Chart(document.getElementById("chart"),{
-type:"line",
-data:{
-labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
-datasets:[
+// ---------------- CHART ----------------
+
+new Chart(document.getElementById("chart"), {
+type: "line",
+data: {
+labels: [...Array(24).keys()].map(i => "M" + (i+1)),
+datasets: [
 {label:"BMI", data:b},
-{label:"TG/HDL", data:r},
-{label:"Risk", data:k}
+{label:"TG/HDL", data:tg_hdl},
+{label:"IIML", data:iiml_arr},
+{label:"Risk", data:risk_arr}
 ]
 }
 });
@@ -196,50 +235,44 @@ datasets:[
 // ---------------- INTERPRETAZIONE ----------------
 
 let BMIf = b[b.length-1];
-let RF = r[r.length-1];
-let KF = k[k.length-1];
+let RF = tg_hdl[tg_hdl.length-1];
+let KF = risk_arr[risk_arr.length-1];
 
 let score = 0;
 
-// scoring semplice ma robusto
-if(BMIf>30) score+=2;
-else if(BMIf>27) score+=1;
+if(BMIf > 30) score += 2;
+else if(BMIf > 27) score += 1;
 
-if(RF>2) score+=2;
-else if(RF>1.5) score+=1;
+if(RF > 2) score += 2;
+else if(RF > 1.5) score += 1;
 
-if(KF>50) score+=2;
-else if(KF>20) score+=1;
+if(KF > 50) score += 2;
+else if(KF > 20) score += 1;
 
 let box = document.getElementById("interpretBox");
 
-if(score<=1){
-box.className="green";
-box.innerHTML=
-"<b>Scenario favorevole</b><br>" +
-"Il sistema mostra stabilità metabolica con basso stress lipidico e accumulo contenuto.";
+if(score <= 1){
+box.className = "green";
+box.innerHTML = "<b>Scenario favorevole</b><br>Stabilità metabolica e basso stress cardiovascolare.";
 }
-else if(score<=3){
-box.className="yellow";
-box.innerHTML=
-"<b>Scenario intermedio</b><br>" +
-"È presente una progressiva tendenza al dismetabolismo. Evoluzione dipendente dalla durata dello stimolo.";
+else if(score <= 3){
+box.className = "yellow";
+box.innerHTML = "<b>Scenario intermedio</b><br>Segnali di progressivo squilibrio metabolico.";
 }
 else{
-box.className="red";
-box.innerHTML=
-"<b>Scenario critico</b><br>" +
-"Si osserva un aumento significativo del carico metabolico e dell’adiposità. Pattern compatibile con progressivo rischio cardiovascolare.";
+box.className = "red";
+box.innerHTML = "<b>Scenario critico</b><br>Aumento significativo del rischio cardiovascolare.";
 }
 
 }
 
 </script>
+
+<!-- DISCLAIMER -->
 <div style="margin-top:20px; font-size:12px; color:#555; border-top:1px solid #ccc; padding-top:10px;">
 <b>Disclaimer</b><br>
-Questo strumento è un modello teorico-simulativo a scopo educativo e di ricerca concettuale.<br>
-Non è validato clinicamente e non costituisce in alcun modo consulenza medica, diagnosi o indicazione terapeutica.<br>
-Le simulazioni rappresentano dinamiche astratte e semplificate di processi biologici e non devono essere utilizzate per decisioni sanitarie reali.
+Modello teorico-simulativo a scopo educativo. Non costituisce consulenza medica.
 </div>
+
 </body>
 </html>
