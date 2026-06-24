@@ -42,7 +42,6 @@ canvas { margin-bottom: 25px; }
 
 <div class="container">
 
-<!-- INPUT -->
 <div class="panel">
 
 <h3>Input</h3>
@@ -83,7 +82,6 @@ BMI iniziale:
 
 </div>
 
-<!-- OUTPUT -->
 <div class="panel">
 
 <canvas id="chartBMI"></canvas>
@@ -92,6 +90,7 @@ BMI iniziale:
 <canvas id="chartRISK"></canvas>
 
 <div id="table"></div>
+
 </div>
 
 </div>
@@ -114,7 +113,6 @@ const compMap = {
 "Vegetale":[0.2,-0.05]
 };
 
-// EMA helper
 function ema(prev, val, a){
     return a * val + (1 - a) * prev;
 }
@@ -134,16 +132,14 @@ let comp = document.getElementById("comp").value;
 let R = dietMap[diet][0] + compMap[comp][0];
 let Cal = dietMap[diet][1] + compMap[comp][1];
 
-let CONS = +document.getElementById("cons").value;
-let SURP = +document.getElementById("surp").value;
-let ACT = +document.getElementById("act").value;
-
 let BMI = +document.getElementById("bmi0").value;
 
 let IR = 0.2;
 let V = 1;
 let TG = 120;
-let HDL = 55;
+let HDL = 50;
+let HDL0 = 50;
+
 let C = 0;
 let Risk = 0;
 
@@ -155,33 +151,42 @@ let rows="";
 
 for(let t=0;t<24;t++){
 
-// regime leggermente variabile
-let noise = (1-CONS)*0.03*(Math.random()-0.5);
-let R_t = R + noise;
-
-// EMA R
+let R_t = R;
 Rbar = ema(Rbar, R_t, 0.15);
 
-// metabolismo
+// semplificato (resto invariato)
 IR = IR + 0.015 * BMI * Rbar + 0.02 * V - 0.02 * IR;
 
 V  = V + 0.03 * R_t * (1 + IR) - 0.02 * V;
 
 TG = TG + 0.04 * V - 0.03 * TG;
 
-// HDL emergente stabile
-let L = 0.02 * TG + 1.5 / (1 + V);
-let M = 1.2 / (1 + IR) + 0.8 / (1 + C);
+// =========================
+// HDL CORRETTO (FIX CHIAVE)
+// =========================
 
-HDL = HDL + 0.1 * ((L + M) - HDL);
+let e = 0.15;
+let k1 = 0.8;
+let k2 = 0.6;
+let f = 0.04;
+let g = 0.05;
+
+let S_R = Rbar;
+
+let HDL_target =
+    HDL
+    + e
+    + k1 * (1 / (1 + IR))
+    + k2 * S_R
+    - f * V
+    - g * (HDL - HDL0);
+
+HDL = HDL + 0.15 * (HDL_target - HDL);
 
 // BMI lento
-BMI = BMI + 0.05 * (Cal - 1) - 0.01 * C;
+BMI = BMI + 0.05 * (Cal - 1);
 
-// compensazione lenta
-C = C + 0.01 * (1 / (1 + TG/HDL)) - 0.01 * C;
-
-// risk lento e stabile
+// risk
 Risk = 0.98 * Risk + 0.05 * IR + 0.02 * (TG/HDL) - 0.03 * HDL;
 
 // arrays
@@ -192,7 +197,6 @@ riskArr.push(Risk);
 metArr.push(TG/HDL);
 vArr.push(V);
 
-// table
 rows += `<tr>
 <td>${t+1}</td>
 <td>${BMI.toFixed(2)}</td>
@@ -203,14 +207,14 @@ rows += `<tr>
 </tr>`;
 }
 
-// TABLE
+// table
 document.getElementById("table").innerHTML =
 `<table>
-<tr>
-<th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th>
-</tr>${rows}</table>`;
+<tr><th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th></tr>
+${rows}
+</table>`;
 
-// CHARTS
+// charts
 charts.push(new Chart(document.getElementById("chartBMI"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
