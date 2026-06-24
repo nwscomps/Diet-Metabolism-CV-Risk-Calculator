@@ -38,7 +38,7 @@ canvas { margin-bottom: 25px; }
 
 <body>
 
-<h2>Modello Dinamico Dieta–Metabolismo–Rischio CV</h2>
+<h2>Modello Dieta–Metabolismo–Rischio CV (Carbohydrate Exposure Model)</h2>
 
 <div class="container">
 
@@ -125,66 +125,82 @@ let Cal = dietMap[diet][1] + compMap[comp][1];
 
 let BMI = +document.getElementById("bmi0").value;
 
+// STATES
 let IR = 0.2;
 let V = 1;
 let TG = 120;
 let HDL = 50;
 let HDL0 = 50;
-
 let Risk = 0;
-let Rbar = R;
 
-let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[], vArr=[];
+// NEW: carbohydrate exposure memory
+let CarbExp = R;
+
+let bmiArr=[], tgArr=[], hdlArr=[], riskArr=[];
 
 let rows="";
 
 for(let t=0;t<24;t++){
 
-// smoothing dieta
-Rbar = ema(Rbar, R, 0.2);
-
-// IR (più sensibile a R)
-IR = IR + 0.018 * BMI * Rbar + 0.025 * V - 0.02 * IR;
-
-// VLDL (R più dominante)
-V = V + 0.05 * Rbar * (1 + 1.5 * IR) - 0.025 * V;
-
-// TG
-TG = TG + 0.045 * V - 0.03 * TG;
+// =======================
+// CARB EXPOSURE (MEMORY)
+// =======================
+CarbExp = 0.9 * CarbExp + 0.1 * R;
 
 // =======================
-// HDL (FIX PRINCIPALE)
+// INSULIN RESISTANCE
 // =======================
+IR =
+IR
++ 0.020 * BMI * CarbExp
++ 0.010 * V
+- 0.020 * IR
+- 0.015 * document.getElementById("act").value;
 
-let e = 0.18;
-let k1 = 1.1;
-let k2 = 0.75;
-let f = 0.05;
-let g = 0.03;
+// =======================
+// VLDL
+// =======================
+V =
+V
++ 0.055 * CarbExp * (1 + IR)
+- 0.025 * V;
 
+// =======================
+// TRIGLYCERIDES
+// =======================
+TG =
+TG
++ 0.045 * V
+- 0.030 * TG;
+
+// =======================
+// HDL (balanced lipid + metabolic model)
+// =======================
 let HDL_target =
     HDL
-    + e
-    + k1 * (1 / (1 + IR))
-    + k2 * Rbar
-    - f * V
-    - g * (HDL - HDL0);
+    + 0.15
+    + 1.0 * (1 / (1 + IR))
+    + 0.6 * CarbExp
+    - 0.05 * V
+    - 0.02 * (HDL - HDL0);
 
-// risposta più reattiva (meno rigidità)
-HDL = HDL + 0.25 * (HDL_target - HDL);
+HDL = HDL + 0.28 * (HDL_target - HDL);
 
+// =======================
 // BMI
-BMI = BMI + 0.04 * (Cal - 1);
+// =======================
+BMI = BMI + 0.035 * (Cal - 1);
 
-// Risk
-Risk = 0.97 * Risk + 0.06 * IR + 0.03 * (TG/HDL) - 0.02 * HDL;
+// =======================
+// RISK
+// =======================
+Risk = 0.97 * Risk + 0.05 * IR + 0.03 * (TG/HDL);
 
-// store
+// STORE
 bmiArr.push(BMI);
 tgArr.push(TG);
 hdlArr.push(HDL);
 riskArr.push(Risk);
-vArr.push(V);
 
 rows += `<tr>
 <td>${t+1}</td>
@@ -196,14 +212,14 @@ rows += `<tr>
 </tr>`;
 }
 
-// table
+// TABLE
 document.getElementById("table").innerHTML =
 `<table>
 <tr><th>Mese</th><th>BMI</th><th>TG</th><th>HDL</th><th>TG/HDL</th><th>Risk</th></tr>
 ${rows}
 </table>`;
 
-// charts
+// CHARTS
 new Chart(document.getElementById("chartBMI"),{
 type:"line",
 data:{labels:[...Array(24).keys()].map(i=>"M"+(i+1)),
